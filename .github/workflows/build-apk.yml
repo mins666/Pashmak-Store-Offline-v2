@@ -43,7 +43,7 @@ jobs:
           echo "Files in repository:"
           find . -maxdepth 2 -type f -print
 
-          ZIP_FILE="./Pashmak_Store_Offline_v2_SearchFix_Final.zip"
+          ZIP_FILE="./Pashmak_Store_Offline_v2_SearchAndCategories_Fix_2026-09-18.zip"
 
           if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: No ZIP file found in repository root."
