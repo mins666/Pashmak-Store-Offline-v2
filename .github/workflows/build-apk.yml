@@ -1,4 +1,4 @@
-name: Build Pashmak Store Invoice Edit v4
+name: Build Pashmak Store v4
 
 on:
   workflow_dispatch:
@@ -44,8 +44,7 @@ jobs:
           EXPECTED_SHA="3ed588f52b4b5bc1d2ffa950242d7eda17b17241c432952c4c8f8959ef95003d"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: Expected ZIP not found."
-            find . -maxdepth 2 -type f -print
+            echo "ERROR: ZIP file not found."
             exit 1
           fi
 
@@ -55,11 +54,11 @@ jobs:
           echo "Actual SHA:   $ACTUAL_SHA"
 
           if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
-            echo "ERROR: ZIP SHA-256 does not match."
+            echo "ERROR: ZIP SHA mismatch."
             exit 1
           fi
 
-          echo "ZIP verified successfully."
+          echo "ZIP verified."
 
       - name: Extract project
         shell: bash
@@ -74,16 +73,14 @@ jobs:
           SETTINGS_FILE="$(find pashmak_project -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print -quit)"
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: Android settings file not found."
+            echo "ERROR: Android project not found."
             exit 1
           fi
 
           PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
-
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Project found at:"
-          echo "$PROJECT_DIR"
+          echo "Project: $PROJECT_DIR"
 
       - name: Verify required changes
         shell: bash
@@ -92,16 +89,11 @@ jobs:
 
           INDEX="$PROJECT_DIR/app/src/main/assets/index.html"
 
-          echo "Checking invoice edit..."
           grep -q "window.editInvoice" "$INDEX"
-
-          echo "Checking invoice void..."
           grep -q "window.voidInvoice" "$INDEX"
-
-          echo "Checking invoice grouping..."
           grep -q "groupedInvoices" "$INDEX"
 
-          echo "Required invoice management code verified."
+          echo "Invoice edit and void code verified."
 
       - name: Set new Package ID and version
         shell: bash
@@ -110,11 +102,11 @@ jobs:
 
           BUILD="$PROJECT_DIR/app/build.gradle"
 
-          sed -i "s/applicationId 'com.pashmak.store.v3test'/applicationId 'com.pashmak.store.v4test'/" "$BUILD"
-          sed -i "s/versionCode 300/versionCode 400/" "$BUILD"
-          sed -i "s/versionName '3.0.0-test'/versionName '4.0.0-test'/" "$BUILD"
+          sed -i -E 's/applicationId[[:space:]]+["'\''][^"'\'']+["'\'']/applicationId "com.pashmak.store.v4test"/' "$BUILD"
+          sed -i -E 's/versionCode[[:space:]]+[0-9]+/versionCode 400/' "$BUILD"
+          sed -i -E 's/versionName[[:space:]]+["'\''][^"'\'']+["'\'']/versionName "4.0.0-test"/' "$BUILD"
 
-          echo "Final Android configuration:"
+          echo "Final configuration:"
           grep -E "applicationId|versionCode|versionName" "$BUILD"
 
       - name: Create new signing key
@@ -135,129 +127,43 @@ jobs:
 
           echo "New signing key created."
 
-      - name: Configure release signing
-        shell: bash
-        run: |
-          set -e
-
-          BUILD="$PROJECT_DIR/app/build.gradle"
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("${BUILD}")
-          text = p.read_text()
-
-          marker = "    buildTypes {"
-
-          signing = """    signingConfigs {
-                  release {
-                      storeFile file("pashmak-v4test.jks")
-                      storePassword "pashmakv4"
-                      keyAlias "pashmak-v4test"
-                      keyPassword "pashmakv4"
-                  }
-              }
-
-          """
-
-          if "signingConfigs {" not in text:
-              text = text.replace(marker, signing + marker, 1)
-
-          text = text.replace(
-              "release { minifyEnabled false; shrinkResources false }",
-              "release { minifyEnabled false; shrinkResources false; signingConfig signingConfigs.release }"
-          )
-
-          p.write_text(text)
-          PY
-
-          echo "Signing configuration added."
-
-      - name: Build signed APK
-        run: |
-          gradle -p "$PROJECT_DIR" :app:assembleRelease --stacktrace
-
-      - name: Verify APK
-        shell: bash
-        run: |
-          set -e
-
-          APK="$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "ERROR: APK was not created."
-            exit 1
-          fi
-
-          echo "APK created successfully:"
-          ls -lh "$APK"
-
-          echo "APK SHA-256:"
-          sha256sum "$APK"
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: Pashmak-Store-v4-InvoiceEdit-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error
-      - name: Find and extract Pashmak project
-        shell: bash
-        run: |
-          set -e
-
-          ZIP_FILE="./Pashmak_Store_v3_Test_InvoiceEdit_2026-09-19.zip"
-
-          echo "Checking ZIP file..."
-
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: ZIP file not found: $ZIP_FILE"
-            echo "Files in repository:"
-            find . -maxdepth 2 -type f -print
-            exit 1
-          fi
-
-          echo "Using ZIP: $ZIP_FILE"
-
-          rm -rf pashmak_project
-          mkdir -p pashmak_project
-
-          unzip -q "$ZIP_FILE" -d pashmak_project
-
-          SETTINGS_FILE="$(find pashmak_project -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print -quit)"
-
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: Android project settings file not found."
-            echo "Extracted files:"
-            find pashmak_project -maxdepth 5 -type f -print
-            exit 1
-          fi
-
-          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
-
-          echo "Android project found at: $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
       - name: Build APK
         run: |
           gradle -p "$PROJECT_DIR" :app:assembleDebug --stacktrace
 
-      - name: Verify APK
+      - name: Sign APK with new key
+        shell: bash
         run: |
-          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          set -e
 
-          if [ ! -f "$APK" ]; then
-            echo "ERROR: APK was not created."
-            exit 1
-          fi
+          UNSIGNED="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          ALIGNED="$PROJECT_DIR/app/build/outputs/apk/debug/app-aligned.apk"
+          FINAL="$PROJECT_DIR/app/build/outputs/apk/debug/Pashmak-Store-v4.apk"
 
-          echo "APK successfully created:"
-          ls -lh "$APK"
+          ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+
+          "$ZIPALIGN" -f 4 "$UNSIGNED" "$ALIGNED"
+
+          "$APKSIGNER" sign \
+            --ks "$PROJECT_DIR/pashmak-v4test.jks" \
+            --ks-pass pass:pashmakv4 \
+            --key-pass pass:pashmakv4 \
+            --ks-key-alias pashmak-v4test \
+            --out "$FINAL" \
+            "$ALIGNED"
+
+          "$APKSIGNER" verify --verbose "$FINAL"
+
+          echo "SIGNED APK:"
+          ls -lh "$FINAL"
+
+          echo "APK SHA-256:"
+          sha256sum "$FINAL"
 
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          name: Pashmak-Store-InvoiceEdit-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          name: Pashmak-Store-v4-InvoiceEdit-Signed
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/Pashmak-Store-v4.apk
           if-no-files-found: error
