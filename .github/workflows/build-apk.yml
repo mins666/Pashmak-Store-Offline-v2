@@ -40,9 +40,10 @@ jobs:
         run: |
           set -e
 
-          ZIP_FILE="./Pashmak_Store_v3_Test_FINAL_2026-09-19.zip"
+          ZIP_FILE="./Pashmak_Store_v3_Test_InvoiceEdit_2026-09-19.zip"
 
           echo "Checking ZIP file..."
+
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: ZIP file not found: $ZIP_FILE"
             echo "Files in repository:"
@@ -90,6 +91,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          name: Pashmak-Store-v3-Test-APK
+          name: Pashmak-Store-InvoiceEdit-APK
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
