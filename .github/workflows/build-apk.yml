@@ -21,14 +21,15 @@ jobs:
         run: |
           set -e
 
-          echo "Searching for project ZIP..."
+          echo "Searching for Pashmak project ZIP..."
 
-          mapfile -t ZIPS < <(find . -type f -iname "*.zip" \
-            ! -path "./.git/*")
+          mapfile -t ZIPS < <(
+            find . -type f -iname "*.zip" \
+            ! -path "./.git/*"
+          )
 
           if [ "${#ZIPS[@]}" -eq 0 ]; then
-            echo "ERROR: No ZIP file found in repository."
-            echo "Repository files:"
+            echo "ERROR: No ZIP file found."
             find . -maxdepth 4 -type f | sort
             exit 1
           fi
@@ -38,7 +39,7 @@ jobs:
 
           ZIP_FILE="${ZIPS[0]}"
 
-          echo "Using ZIP:"
+          echo "Using:"
           echo "$ZIP_FILE"
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
@@ -48,10 +49,11 @@ jobs:
         run: |
           set -e
 
-          echo "Testing ZIP..."
+          echo "Testing ZIP integrity..."
+
           unzip -t "$ZIP_FILE"
 
-          echo "ZIP is valid."
+          echo "ZIP integrity OK."
 
       - name: Extract project
         shell: bash
@@ -70,334 +72,79 @@ jobs:
         run: |
           set -e
 
-          if [ -f "project/settings.gradle" ] || \
-             [ -f "project/settings.gradle.kts" ]; then
-
-            echo "PROJECT_DIR=project" >> "$GITHUB_ENV"
-            echo "Android project found in project/"
-            exit 0
-          fi
-
           FOUND=$(find project -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -name "settings.gradle" \
             | head -n 1)
 
           if [ -z "$FOUND" ]; then
-            echo "ERROR: Android Gradle project not found."
+            echo "ERROR: settings.gradle not found."
             find project -maxdepth 6 -type f | sort
             exit 1
           fi
 
-          DIR=$(dirname "$FOUND")
+          PROJECT_DIR=$(dirname "$FOUND")
 
-          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
-
-          echo "Android project found:"
-          echo "$DIR"
-
-      - name: Check required files
-        shell: bash
-        run: |
-          set -e
-
-          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
-          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-          test -f "$PROJECT_DIR/gradlew"
-
-          echo "Required files found."
-
-      - name: Check Pashmak features
-        shell: bash
-        run: |
-          set -e
-
-          INDEX="$PROJECT_DIR/app/src/main/assets/index.html"
-
-          grep -q "store_full_v2" "$INDEX"
-          grep -q "sales" "$INDEX"
-          grep -q "void" "$INDEX"
-          grep -q "report" "$INDEX"
-
-          echo "Pashmak features verified."
-
-      - name: Set package and version
-        shell: bash
-        run: |
-          set -e
-
-          echo "Setting package ID..."
-
-          find "$PROJECT_DIR" -type f \
-            \( -name "*.gradle" \
-            -o -name "*.gradle.kts" \
-            -o -name "AndroidManifest.xml" \
-            -o -name "*.java" \) \
-            -print0 | xargs -0 sed -i \
-            -e 's/com\.pashmak\.store\.v3test/com.pashmak.store.v4test/g' \
-            -e 's/com\.pashmak\.store/com.pashmak.store.v4test/g'
-
-          find "$PROJECT_DIR" -type f \
-            \( -name "*.gradle" -o -name "*.gradle.kts" \) \
-            -print0 | xargs -0 sed -i \
-            -e 's/versionCode[[:space:]]*[0-9]*/versionCode 400/g' \
-            -e 's/versionName[[:space:]]*["'\''][^"'\'']*["'\'']/versionName "4.0.0-test"/g'
-
-          echo "Package: com.pashmak.store.v4test"
-          echo "Version: 4.0.0-test"
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Prepare Android SDK
-        shell: bash
-        run: |
-          set -e
-
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-
-          test -d "$ANDROID_HOME"
-
-          echo "Android SDK found."
-
-      - name: Make Gradle executable
-        shell: bash
-        run: |
-          set -e
-
-          chmod +x "$PROJECT_DIR/gradlew"
-
-          echo "Gradle ready."
-
-      - name: Build debug APK
-        shell: bash
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          set -e
-
-          ./gradlew clean assembleDebug \
-            --no-daemon \
-            --stacktrace
-
-      - name: Find APK
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
-            -type f -name "*.apk" \
-            | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK was not generated."
-            exit 1
-          fi
-
-          echo "APK found:"
-          echo "$APK"
-
-          cp "$APK" "$GITHUB_WORKSPACE/Pashmak-Store-v4.apk"
-
-      - name: Generate signing key
-        shell: bash
-        run: |
-          set -e
-
-          keytool -genkeypair \
-            -v \
-            -keystore "$RUNNER_TEMP/pashmak-v4.keystore" \
-            -alias pashmakv4 \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass pashmak123 \
-            -keypass pashmak123 \
-            -dname "CN=Pashmak Store, OU=Pashmak, O=Pashmak, L=Tehran, ST=Tehran, C=IR"
-
-          echo "Signing key generated."
-
-      - name: Align APK
-        shell: bash
-        run: |
-          set -e
-
-          BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* \
-            | sort -V | tail -n 1)
-
-          "$BUILD_TOOLS/zipalign" \
-            -f 4 \
-            Pashmak-Store-v4.apk \
-            Pashmak-Store-v4-aligned.apk
-
-          echo "APK aligned."
-
-      - name: Sign APK
-        shell: bash
-        run: |
-          set -e
-
-          BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* \
-            | sort -V | tail -n 1)
-
-          "$BUILD_TOOLS/apksigner" sign \
-            --ks "$RUNNER_TEMP/pashmak-v4.keystore" \
-            --ks-key-alias pashmakv4 \
-            --ks-pass pass:pashmak123 \
-            --key-pass pass:pashmak123 \
-            --out Pashmak-Store-v4-signed.apk \
-            Pashmak-Store-v4-aligned.apk
-
-          echo "APK signed."
-
-      - name: Verify APK
-        shell: bash
-        run: |
-          set -e
-
-          BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* \
-            | sort -V | tail -n 1)
-
-          "$BUILD_TOOLS/apksigner" verify \
-            --verbose \
-            Pashmak-Store-v4-signed.apk
-
-          echo "APK signature verified."
-
-      - name: Show APK information
-        shell: bash
-        run: |
-          set -e
-
-          BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* \
-            | sort -V | tail -n 1)
-
-          "$BUILD_TOOLS/aapt" dump badging \
-            Pashmak-Store-v4-signed.apk | head -n 5
-
-          ls -lh Pashmak-Store-v4-signed.apk
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Pashmak-Store-v4-FINAL
-          path: Pashmak-Store-v4-signed.apk
-          if-no-files-found: error
-      - name: Verify ZIP
-        shell: bash
-        run: |
-          set -e
-
-          unzip -t "$ZIP_FILE"
-
-          echo "ZIP file is valid."
-
-      - name: Extract project
-        shell: bash
-        run: |
-          set -e
-
-          rm -rf project
-          mkdir -p project
-
-          unzip -q "$ZIP_FILE" -d project
-
-          echo "Project extracted."
-
-      - name: Locate Android project
-        shell: bash
-        run: |
-          set -e
-
-          if [ -f "project/settings.gradle" ] || \
-             [ -f "project/settings.gradle.kts" ]; then
-
-            echo "PROJECT_DIR=project" >> "$GITHUB_ENV"
-            exit 0
-          fi
-
-          FOUND=$(find project -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            | head -n 1)
-
-          if [ -z "$FOUND" ]; then
-            echo "ERROR: Android Gradle project not found."
-            find project -maxdepth 5 -type f | sort
-            exit 1
-          fi
-
-          DIR=$(dirname "$FOUND")
-
-          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
           echo "Android project:"
-          echo "$DIR"
+          echo "$PROJECT_DIR"
 
-      - name: Check required files
+      - name: Check project files
         shell: bash
         run: |
           set -e
 
-          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
+          test -f "$PROJECT_DIR/settings.gradle"
+          test -f "$PROJECT_DIR/build.gradle"
+          test -f "$PROJECT_DIR/app/build.gradle"
           test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-          test -f "$PROJECT_DIR/gradlew"
+          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
+          test -f "$PROJECT_DIR/app/src/main/java/com/pashmak/store/MainActivity.java"
 
-          echo "Required Android files found."
+          echo "All required project files exist."
 
-      - name: Check Pashmak features
+      - name: Verify Pashmak package and version
+        shell: bash
+        run: |
+          set -e
+
+          APP_GRADLE="$PROJECT_DIR/app/build.gradle"
+
+          grep -q "applicationId 'com.pashmak.store.v4test'" "$APP_GRADLE"
+          grep -q "versionCode 400" "$APP_GRADLE"
+          grep -q "versionName '4.0.0-test'" "$APP_GRADLE"
+          grep -q "compileSdk 35" "$APP_GRADLE"
+          grep -q "com.android.application.*8.5.2" "$PROJECT_DIR/build.gradle"
+
+          echo "Package and Android build configuration verified."
+
+      - name: Verify application data code
         shell: bash
         run: |
           set -e
 
           INDEX="$PROJECT_DIR/app/src/main/assets/index.html"
 
+          test -s "$INDEX"
+
           grep -q "store_full_v2" "$INDEX"
+          grep -q "localStorage" "$INDEX"
           grep -q "sales" "$INDEX"
-          grep -q "void" "$INDEX"
-          grep -q "report" "$INDEX"
 
-          echo "Pashmak application code verified."
+          echo "Pashmak application data code verified."
 
-      - name: Set package and version
-        shell: bash
-        run: |
-          set -e
-
-          echo "Setting package ID to com.pashmak.store.v4test"
-
-          find "$PROJECT_DIR" -type f \
-            \( -name "*.gradle" \
-            -o -name "*.gradle.kts" \
-            -o -name "AndroidManifest.xml" \
-            -o -name "*.java" \) \
-            -print0 | xargs -0 sed -i \
-            -e 's/com\.pashmak\.store\.v3test/com.pashmak.store.v4test/g'
-
-          find "$PROJECT_DIR" -type f \
-            \( -name "*.gradle" \
-            -o -name "*.gradle.kts" \
-            -o -name "AndroidManifest.xml" \
-            -o -name "*.java" \) \
-            -print0 | xargs -0 sed -i \
-            -e 's/com\.pashmak\.store/com.pashmak.store.v4test/g'
-
-          find "$PROJECT_DIR" -type f \
-            \( -name "*.gradle" -o -name "*.gradle.kts" \) \
-            -print0 | xargs -0 sed -i \
-            -e 's/versionCode[[:space:]]*[0-9]*/versionCode 400/g' \
-            -e 's/versionName[[:space:]]*["'\''][^"'\'']*["'\'']/versionName "4.0.0-test"/g'
-
-          echo "Package and version updated."
-
-      - name: Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Prepare Android SDK
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Prepare Android SDK 35
         shell: bash
         run: |
           set -e
@@ -405,51 +152,72 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
-          test -d "$ANDROID_HOME"
+          SDKMANAGER=""
 
           if command -v sdkmanager >/dev/null 2>&1; then
-            yes | sdkmanager --licenses > /dev/null || true
+            SDKMANAGER="$(command -v sdkmanager)"
+          elif [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          else
+            FOUND_SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
+              -type f -name sdkmanager \
+              | head -n 1)
+
+            if [ -n "$FOUND_SDKMANAGER" ]; then
+              SDKMANAGER="$FOUND_SDKMANAGER"
+            fi
           fi
 
-          echo "Android SDK is ready."
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager not found."
+            exit 1
+          fi
 
-      - name: Make Gradle executable
-        shell: bash
-        run: |
-          set -e
+          echo "Using sdkmanager:"
+          echo "$SDKMANAGER"
 
-          chmod +x "$PROJECT_DIR/gradlew"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
 
-          echo "Gradle is executable."
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-      - name: Build debug APK
+          echo "Android SDK 35 is ready."
+
+      - name: Build APK
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -e
 
-          ./gradlew clean assembleDebug \
+          gradle clean assembleDebug \
             --no-daemon \
             --stacktrace
 
-      - name: Find APK
+      - name: Find generated APK
         shell: bash
         run: |
           set -e
 
-          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
-            -type f -name "*.apk" \
+          APK=$(find "$PROJECT_DIR/app/build/outputs/apk/debug" \
+            -type f \
+            -name "*.apk" \
             | head -n 1)
 
           if [ -z "$APK" ]; then
             echo "ERROR: APK was not generated."
+
+            find "$PROJECT_DIR/app/build/outputs" \
+              -type f 2>/dev/null || true
+
             exit 1
           fi
 
-          echo "APK found:"
+          echo "Generated APK:"
           echo "$APK"
 
-          cp "$APK" "$GITHUB_WORKSPACE/Pashmak-Store-v4.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/Pashmak-Store-v4-unsigned.apk"
 
       - name: Generate new signing key
         shell: bash
@@ -467,19 +235,20 @@ jobs:
             -keypass pashmak123 \
             -dname "CN=Pashmak Store, OU=Pashmak, O=Pashmak, L=Tehran, ST=Tehran, C=IR"
 
-          echo "Signing key generated."
+          echo "New signing key generated."
 
       - name: Align APK
         shell: bash
         run: |
           set -e
 
-          BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* \
-            | sort -V | tail -n 1)
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+
+          test -x "$BUILD_TOOLS/zipalign"
 
           "$BUILD_TOOLS/zipalign" \
             -f 4 \
-            Pashmak-Store-v4.apk \
+            Pashmak-Store-v4-unsigned.apk \
             Pashmak-Store-v4-aligned.apk
 
           echo "APK aligned."
@@ -489,15 +258,16 @@ jobs:
         run: |
           set -e
 
-          BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* \
-            | sort -V | tail -n 1)
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+
+          test -x "$BUILD_TOOLS/apksigner"
 
           "$BUILD_TOOLS/apksigner" sign \
             --ks "$RUNNER_TEMP/pashmak-v4.keystore" \
             --ks-key-alias pashmakv4 \
             --ks-pass pass:pashmak123 \
             --key-pass pass:pashmak123 \
-            --out Pashmak-Store-v4-signed.apk \
+            --out Pashmak-Store-v4.apk \
             Pashmak-Store-v4-aligned.apk
 
           echo "APK signed."
@@ -507,32 +277,50 @@ jobs:
         run: |
           set -e
 
-          BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* \
-            | sort -V | tail -n 1)
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
 
           "$BUILD_TOOLS/apksigner" verify \
             --verbose \
-            Pashmak-Store-v4-signed.apk
+            Pashmak-Store-v4.apk
 
-          echo "APK signature verified."
+          echo "APK signature verified successfully."
 
-      - name: Show APK information
+      - name: Verify APK package
         shell: bash
         run: |
           set -e
 
-          BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* \
-            | sort -V | tail -n 1)
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
 
-          "$BUILD_TOOLS/aapt" dump badging \
-            Pashmak-Store-v4-signed.apk | head -n 5
+          BADGING=$(
+            "$BUILD_TOOLS/aapt" dump badging \
+            Pashmak-Store-v4.apk
+          )
 
-          echo "Final APK:"
-          ls -lh Pashmak-Store-v4-signed.apk
+          echo "$BADGING"
 
-      - name: Upload APK artifact
+          echo "$BADGING" | grep -q \
+            "package: name='com.pashmak.store.v4test'"
+
+          echo "$BADGING" | grep -q \
+            "versionCode='400'"
+
+          echo "$BADGING" | grep -q \
+            "versionName='4.0.0-test'"
+
+          echo "APK package information verified."
+
+      - name: Show final APK
+        shell: bash
+        run: |
+          set -e
+
+          echo "FINAL APK:"
+          ls -lh Pashmak-Store-v4.apk
+
+      - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
           name: Pashmak-Store-v4-FINAL
-          path: Pashmak-Store-v4-signed.apk
+          path: Pashmak-Store-v4.apk
           if-no-files-found: error
