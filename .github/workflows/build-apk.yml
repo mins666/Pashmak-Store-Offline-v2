@@ -40,19 +40,21 @@ jobs:
         run: |
           set -e
 
-          echo "Files in repository:"
-          find . -maxdepth 2 -type f -print
+          ZIP_FILE="./Pashmak_Store_v3_Test_FINAL_2026-09-19.zip"
 
-          ZIP_FILE="./Pashmak_Store_Offline_v2_SearchAndCategories_Fix_2026-09-18.zip"
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: No ZIP file found in repository root."
+          echo "Checking ZIP file..."
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERROR: ZIP file not found: $ZIP_FILE"
+            echo "Files in repository:"
+            find . -maxdepth 2 -type f -print
             exit 1
           fi
 
           echo "Using ZIP: $ZIP_FILE"
 
+          rm -rf pashmak_project
           mkdir -p pashmak_project
+
           unzip -q "$ZIP_FILE" -d pashmak_project
 
           SETTINGS_FILE="$(find pashmak_project -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print -quit)"
@@ -60,7 +62,7 @@ jobs:
           if [ -z "$SETTINGS_FILE" ]; then
             echo "ERROR: Android project settings file not found."
             echo "Extracted files:"
-            find pashmak_project -maxdepth 4 -type f -print
+            find pashmak_project -maxdepth 5 -type f -print
             exit 1
           fi
 
@@ -73,9 +75,21 @@ jobs:
         run: |
           gradle -p "$PROJECT_DIR" :app:assembleDebug --stacktrace
 
+      - name: Verify APK
+        run: |
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK was not created."
+            exit 1
+          fi
+
+          echo "APK successfully created:"
+          ls -lh "$APK"
+
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          name: Pashmak-Store-Offline-v2-APK
+          name: Pashmak-Store-v3-Test-APK
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
